@@ -8,8 +8,10 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "main.h"
 #include <stdio.h>
 #include <stdlib.h>
+/* Private includes --
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -38,20 +40,20 @@ SPI_HandleTypeDef hspi1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-uint16_t x_start = 10, x_end = 10;
-uint16_t y_start = 10, y_end = 95;
+uint16_t current_x = 64, current_y = 80;
+uint16_t old_x = 64, old_y = 80;
 
-// 16-bit RGB565 Colors
 uint16_t paint_colors[] = {
     0xF800, // Red
     0x07E0, // Green
     0x001F, // Blue
     0xFFE0, // Yellow
     0xF81F, // Magenta
-    0x07FF  // Cyan
+    0x07FF, // Cyan
+    0x0000  // Black
 };
-
-
+uint8_t color_index = 0;
+uint16_t selected_color = 0xF800;
 uint8_t num_colors = sizeof(paint_colors) / sizeof(paint_colors[0]);
 /* USER CODE END PV */
 
@@ -70,7 +72,7 @@ void LCD_DataMode(uint8_t data);
 void Lcdopen(void);
 void Lcdclose(void);
 void LCD_courser(uint8_t x, uint8_t y, uint16_t color);
-void paint(uint8_t x, uint8_t y, uint16_t color) ;
+void paint(void) ;
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -82,8 +84,6 @@ void paint(uint8_t x, uint8_t y, uint16_t color) ;
   * @brief  The application entry point.
   * @retval int
   */
-uint8_t color_index = 0;
-
 int main(void)
 {
   HAL_Init();
@@ -97,66 +97,99 @@ int main(void)
   /* USER CODE BEGIN 2 */
   LCD_Init();
   LCD_Fill(0xFFFF);
-  printf("System Ready. Press PC4 to Paint.\r\n");
-
-
-
+  LCD_color_choice();
   uint32_t x_raw = 2048;
   uint32_t y_raw = 2048;
   int old_x = 40;
   int old_y = 90;
-
-  uint16_t courser_color = 0x0000;
-  LCD_color_choice();
-
+  int x_center_offset = 2150;
+   int y_center_offset = 1900;
+   int deadzone = 100;
   /* USER CODE END 2 */
 
   while (1)
   {
-      uint32_t x_avg = 0, y_avg = 0;
-      for(int i=0; i<4; i++) {
-          HAL_ADC_Start(&hadc1);
-          HAL_ADC_PollForConversion(&hadc1, 5);
-          x_avg += HAL_ADC_GetValue(&hadc1);
-          HAL_ADC_PollForConversion(&hadc1, 5);
-          y_avg += HAL_ADC_GetValue(&hadc1);
+
+
+	      uint32_t x_sum = 0, y_sum = 0;
+	      int samples = 8;
+
+	      for(int i = 0; i < samples; i++) {
+	          HAL_ADC_Start(&hadc1);
+	          HAL_ADC_PollForConversion(&hadc1, 5);
+	          x_sum += HAL_ADC_GetValue(&hadc1);
+	          HAL_ADC_PollForConversion(&hadc1, 5);
+	          y_sum += HAL_ADC_GetValue(&hadc1);
+	      }
+
+	      x_raw = x_sum / samples;
+	      y_raw = y_sum / samples;
+
+
+
+	      int x_relative = (int)x_raw - x_center_offset;
+	      int y_relative = (int)y_raw - y_center_offset;
+
+
+	      if (abs(x_relative) < deadzone) x_relative = 0;
+	      if (abs(y_relative) < deadzone) y_relative = 0;
+
+
+	      int new_x = 64 + (x_relative * 64) / 2048;
+	      int new_y = 80 + (y_relative * 80) / 2048;
+
+
+	      if (new_x < 0) new_x = 0;
+	      if (new_x > 118) new_x = 118;
+	      if (new_y < 0) new_y = 0;
+	      if (new_y > 150) new_y = 150;
+
+
+
+
+	      int threshold = 5;
+	      if (abs(new_x - old_x) > threshold || abs(new_y - old_y) > threshold) {
+
+	    	  if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_5) == GPIO_PIN_SET) {
+
+	    	      LCD_courser(old_x, old_y, 0xFFFF);
+	    	  }
+	    	  else if (selected_color != paint_colors[color_index]) {
+
+	    	      paint();
+	    	  }
+
+	          current_x = new_x;
+	          current_y = new_y;
+
+
+	          LCD_courser(current_x, current_y, selected_color);
+
+	          old_x = current_x;
+	          old_y = current_y;
+	      }
+
+
+
+
+	      if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_10) == GPIO_PIN_RESET) {
+	          LCD_Fill(0xFFFF);
+	          LCD_color_choice();
+	          HAL_Delay(300);
+	      }
+
+
+
+	           if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_4) == GPIO_PIN_RESET) {
+	               LCD_color_choice();
+	               HAL_Delay(200);
+	           }
+
+
+
       }
-      x_raw = x_avg / 4;
-      y_raw = y_avg / 4;
-      HAL_ADC_Stop(&hadc1);
 
 
-      int new_x = (x_raw * 185) / 4096;
-      int new_y = (y_raw * 115) / 4096;
-
-
-      if (abs(new_x - old_x) > 3 || abs(new_y - old_y) > 3)
-      {
-
-          LCD_courser(old_y, old_x, 0xFFFF);
-
-          old_x = new_x;
-          old_y = new_y;
-
-          LCD_courser(old_y, old_x, courser_color);
-      }
-
-
-      HAL_Delay(50);
-
-      // Button Logic
-      if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_5) == GPIO_PIN_RESET) {
-
-    	     paint(old_y, old_x,courser_color) ;
-
-             HAL_Delay(200);
-         }
-
-      if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_4) == GPIO_PIN_RESET) {
-          LCD_color_choice();
-          HAL_Delay(200);
-      }
-  }
 } // End of main()
 
 /**
@@ -246,7 +279,7 @@ static void MX_ADC1_Init(void)
     */
     sConfig.Channel = ADC_CHANNEL_1;
     sConfig.Rank = 1;
-    sConfig.SamplingTime = ADC_SAMPLETIME_56CYCLES;
+    sConfig.SamplingTime = ADC_SAMPLETIME_144CYCLES;
     if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
     {
       Error_Handler();
@@ -256,7 +289,7 @@ static void MX_ADC1_Init(void)
     */
     sConfig.Channel = ADC_CHANNEL_9;
     sConfig.Rank = 2;
-    sConfig.SamplingTime = ADC_SAMPLETIME_56CYCLES;
+    sConfig.SamplingTime = ADC_SAMPLETIME_144CYCLES;
     if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
     {
       Error_Handler();
@@ -370,6 +403,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PA10 */
+  GPIO_InitStruct.Pin = GPIO_PIN_10;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -521,9 +560,9 @@ void LCD_color_choice(void){
 
 }
 void LCD_courser(uint8_t x, uint8_t y, uint16_t color) {
-    uint16_t size = 5;
+    uint16_t size = 10;
 
-    if (x + 5 > 80 && x < 95 && y + 5 > 10 && y < 30) {
+    if (x + 10 > 80 && x < 95 && y + 10 > 10 && y < 30) {
             return;
         }
 
@@ -553,36 +592,12 @@ void LCD_courser(uint8_t x, uint8_t y, uint16_t color) {
 }
 
 
-void paint(uint8_t x, uint8_t y, uint16_t color) {
 
-    uint16_t size = 5;
 
-    uint16_t color_test = paint_colors[color_index-1];
-    uint8_t data[] = {color_test >> 8, color_test & 0xFF};
-    uint16_t x_end = x + size - 1;
-    uint16_t y_end = y + size - 1;
-
-    // Set Column Address
-    LCD_CommandMode(0x2A);
-    LCD_DataMode(0x00); LCD_DataMode(x);
-    LCD_DataMode(0x00); LCD_DataMode(x_end);
-
-    // Set Row Address
-    LCD_CommandMode(0x2B);
-    LCD_DataMode(0x00); LCD_DataMode(y);
-    LCD_DataMode(0x00); LCD_DataMode(y_end);
-
-    LCD_CommandMode(0x2C); // RAM Write
-
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);
-    LcdOpen();
-    for(int i = 0; i < (size * size); i++) {
-        HAL_SPI_Transmit(&hspi1, data, 2, HAL_MAX_DELAY);
-    }
-    Lcdclose();
+void paint(void){
+	selected_color=paint_colors[color_index-1];
 
 }
-
 
 
 
