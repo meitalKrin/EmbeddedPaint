@@ -11,6 +11,8 @@
 #include "main.h"
 #include <stdio.h>
 #include <stdlib.h>
+#define LCD_WIDTH  128
+#define LCD_HEIGHT 160
 /* Private includes --
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -55,6 +57,11 @@ uint16_t paint_colors[] = {
 uint8_t color_index = 0;
 uint16_t selected_color = 0xF800;
 uint8_t num_colors = sizeof(paint_colors) / sizeof(paint_colors[0]);
+
+uint16_t frame_buffer[LCD_WIDTH][LCD_HEIGHT];
+
+int currentSize = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -72,7 +79,10 @@ void LCD_DataMode(uint8_t data);
 void Lcdopen(void);
 void Lcdclose(void);
 void LCD_courser(uint8_t x, uint8_t y, uint16_t color);
-void paint(void) ;
+void paint(uint8_t y, uint8_t x, uint16_t color);
+void saveColorToArray(uint8_t y, uint8_t x, uint16_t color);
+uint16_t loadColorToArray(uint8_t y, uint8_t x);
+uint16_t LCD_Restore_Area(uint8_t y, uint8_t x);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -88,7 +98,6 @@ int main(void)
 {
   HAL_Init();
   SystemClock_Config();
-
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_SPI1_Init();
@@ -139,10 +148,7 @@ int main(void)
 	      int new_y = 80 + (y_relative * 80) / 2048;
 
 
-	      if (new_x < 0) new_x = 0;
-	      if (new_x > 118) new_x = 118;
-	      if (new_y < 0) new_y = 0;
-	      if (new_y > 150) new_y = 150;
+
 
 
 
@@ -150,24 +156,20 @@ int main(void)
 	      int threshold = 5;
 	      if (abs(new_x - old_x) > threshold || abs(new_y - old_y) > threshold) {
 
-	    	  if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_5) == GPIO_PIN_SET) {
+	    	      if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_5) == GPIO_PIN_SET) {
+	    	          LCD_Restore_Area(old_x, old_y);
+	    	          LCD_courser(old_x, old_y, frame_buffer[old_x][old_y]);
 
-	    	      LCD_courser(old_x, old_y, 0xFFFF);
+	    	      }else{
+	    	    	  paint(new_x, new_y, selected_color);
+	    	      }
+
+
+	    	      LCD_courser(new_x, new_y, selected_color);
+
+	    	      old_x = new_x;
+	    	      old_y = new_y;
 	    	  }
-	    	  else if (selected_color != paint_colors[color_index]) {
-
-	    	      paint();
-	    	  }
-
-	          current_x = new_x;
-	          current_y = new_y;
-
-
-	          LCD_courser(current_x, current_y, selected_color);
-
-	          old_x = current_x;
-	          old_y = current_y;
-	      }
 
 
 
@@ -176,6 +178,7 @@ int main(void)
 	          LCD_Fill(0xFFFF);
 	          LCD_color_choice();
 	          HAL_Delay(300);
+
 	      }
 
 
@@ -485,33 +488,29 @@ void LCD_DataMode(uint8_t pin) {
    Lcdclose();
 }
 
-void  LCD_Fill(uint16_t color){
-	LCD_CommandMode(0x2A); //get x
-	LCD_DataMode(0x00);
-	LCD_DataMode(0x00);
-	LCD_DataMode(0x00);
-	LCD_DataMode(0x7F);
-	LCD_CommandMode(0x2B); //get y
-	LCD_DataMode(0x00);
-	LCD_DataMode(0x00);
-	LCD_DataMode(0x00);
-	LCD_DataMode(0x9F);
-	LCD_CommandMode(0x2C);
+void LCD_Fill(uint16_t color) {
 
-	//split to 1 byte color spi cant heandle 2 byte colors
-	uint8_t data[]= {color >> 8 ,color & 0xFF};
-
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);
-	    LcdOpen();
+    for (int x = 0; x < LCD_WIDTH; x++) {
+        for (int y = 0; y < LCD_HEIGHT; y++) {
+            frame_buffer[x][y] = color;
+        }
+    }
 
 
-	    for(uint32_t i = 0; i < (128 * 160); i++) {
-	        HAL_SPI_Transmit(&hspi1, data, 2, HAL_MAX_DELAY);
-	    }
+    LCD_CommandMode(0x2A);
+    LCD_DataMode(0x00); LCD_DataMode(0x00); LCD_DataMode(0x00); LCD_DataMode(0x7F);
+    LCD_CommandMode(0x2B);
+    LCD_DataMode(0x00); LCD_DataMode(0x00); LCD_DataMode(0x00); LCD_DataMode(0x9F);
+    LCD_CommandMode(0x2C);
 
-	    Lcdclose();
+    uint8_t data[] = {color >> 8, color & 0xFF};
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);
+    LcdOpen();
+    for (uint32_t i = 0; i < (LCD_WIDTH * LCD_HEIGHT); i++) {
+        HAL_SPI_Transmit(&hspi1, data, 2, HAL_MAX_DELAY);
+    }
+    Lcdclose();
 }
-
 
 
 void LCD_color_choice(void){
@@ -594,15 +593,27 @@ void LCD_courser(uint8_t x, uint8_t y, uint16_t color) {
 
 
 
-void paint(void){
-	selected_color=paint_colors[color_index-1];
+void paint(uint8_t y, uint8_t x, uint16_t color){
+
+	selected_color = paint_colors[color_index-1];
+	frame_buffer[x][y] = color;
 
 }
 
 
+void saveColorToArray(uint8_t x, uint8_t y, uint16_t color) {
+
+        frame_buffer[x][y] = color;
+
+}
 
 
+uint16_t LCD_Restore_Area(uint8_t x, uint8_t y) {
 
+if( frame_buffer[x][y]){return frame_buffer[x][y]; }
+else {return 0x0000;}
+printf("%d",frame_buffer[x][y]);
+}
 
 
 
