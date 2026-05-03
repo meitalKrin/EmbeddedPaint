@@ -1,1 +1,11 @@
 // pc5 = btnA
+// pa10 = btnC
+// pc5 = btnB
+//A1 =Y
+//PB1 = X
+//pb13 = DC
+//pb14 = cs
+//pb15 = res 
+// 3v3 = blk 
+// sda =  pa7
+//scl = pa 5

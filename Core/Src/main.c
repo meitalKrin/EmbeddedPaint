@@ -52,10 +52,9 @@ uint16_t paint_colors[] = {
     0xFFE0, // Yellow
     0xF81F, // Magenta
     0x07FF, // Cyan
-    0x0000  // Black
 };
 uint8_t color_index = 0;
-uint16_t selected_color = 0xF800;
+
 uint8_t num_colors = sizeof(paint_colors) / sizeof(paint_colors[0]);
 
 uint16_t frame_buffer[LCD_WIDTH][LCD_HEIGHT];
@@ -83,6 +82,8 @@ void paint(uint8_t y, uint8_t x, uint16_t color);
 void saveColorToArray(uint8_t y, uint8_t x, uint16_t color);
 uint16_t loadColorToArray(uint8_t y, uint8_t x);
 uint16_t LCD_Restore_Area(uint8_t y, uint8_t x);
+void frame_buffer_init(void);
+void LCD_OnSetup_color_choice(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -106,14 +107,16 @@ int main(void)
   /* USER CODE BEGIN 2 */
   LCD_Init();
   LCD_Fill(0xFFFF);
-  LCD_color_choice();
+  frame_buffer_init();
+  LCD_OnSetup_color_choice();
   uint32_t x_raw = 2048;
   uint32_t y_raw = 2048;
   int old_x = 40;
   int old_y = 90;
   int x_center_offset = 2150;
    int y_center_offset = 1900;
-   int deadzone = 100;
+   int deadzone =10;
+
   /* USER CODE END 2 */
 
   while (1)
@@ -156,29 +159,30 @@ int main(void)
 	      int threshold = 5;
 	      if (abs(new_x - old_x) > threshold || abs(new_y - old_y) > threshold) {
 
-	    	      if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_5) == GPIO_PIN_SET) {
-	    	          LCD_Restore_Area(old_x, old_y);
-	    	          LCD_courser(old_x, old_y, frame_buffer[old_x][old_y]);
+	    	  if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_5) == GPIO_PIN_SET) {
 
-	    	      }else{
-	    	    	  paint(new_x, new_y, selected_color);
-	    	      }
+	    	      LCD_Restore_Area(old_x, old_y);
+	    	      LCD_courser(new_x, new_y, 0);
+	    	  } else {
 
+	    	      LCD_Restore_Area(old_x, old_y);
+	    	      paint(new_x, new_y, paint_colors[color_index]);
+	    	      LCD_courser(new_x, new_y, 0);
+	    	  }
 
-	    	      LCD_courser(new_x, new_y, selected_color);
-
-	    	      old_x = new_x;
-	    	      old_y = new_y;
+	    	  old_x = new_x;
+	    	  old_y = new_y;
 	    	  }
 
 
 
 
 	      if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_10) == GPIO_PIN_RESET) {
+	          color_index = 0;
 	          LCD_Fill(0xFFFF);
-	          LCD_color_choice();
+	          frame_buffer_init();
+	          LCD_OnSetup_color_choice();
 	          HAL_Delay(300);
-
 	      }
 
 
@@ -490,11 +494,7 @@ void LCD_DataMode(uint8_t pin) {
 
 void LCD_Fill(uint16_t color) {
 
-    for (int x = 0; x < LCD_WIDTH; x++) {
-        for (int y = 0; y < LCD_HEIGHT; y++) {
-            frame_buffer[x][y] = color;
-        }
-    }
+
 
 
     LCD_CommandMode(0x2A);
@@ -514,6 +514,18 @@ void LCD_Fill(uint16_t color) {
 
 
 void LCD_color_choice(void){
+
+
+	    color_index++;
+	    if (color_index >= num_colors) {
+	        color_index = 0;
+	    }
+
+	    LCD_OnSetup_color_choice();
+
+}
+
+void LCD_OnSetup_color_choice(void){
 
 	uint16_t color = paint_colors[color_index];
 	    uint8_t data[] = {color >> 8, color & 0xFF};
@@ -550,10 +562,7 @@ void LCD_color_choice(void){
 	    }
 
 	    Lcdclose();
-	    color_index++;
-	    if (color_index >= num_colors) {
-	        color_index = 0;
-	    }
+
 
 
 
@@ -566,7 +575,8 @@ void LCD_courser(uint8_t x, uint8_t y, uint16_t color) {
         }
 
 
-    uint8_t data[] = { (uint8_t)(color >> 8), (uint8_t)(color & 0xFF) };
+    uint16_t black = 0x0000;
+        uint8_t data[] = { (uint8_t)(black >> 8), (uint8_t)(black & 0xFF) };
     uint16_t x_end = x + size - 1;
     uint16_t y_end = y + size - 1;
 
@@ -593,30 +603,59 @@ void LCD_courser(uint8_t x, uint8_t y, uint16_t color) {
 
 
 
-void paint(uint8_t y, uint8_t x, uint16_t color){
+void paint(uint8_t x, uint8_t y, uint16_t color){
 
-	selected_color = paint_colors[color_index-1];
-	frame_buffer[x][y] = color;
 
+	saveColorToArray(x, y, color);
 }
 
 
+
 void saveColorToArray(uint8_t x, uint8_t y, uint16_t color) {
+    for (int dx = 0; dx < 10; dx++)
+        for (int dy = 0; dy < 10; dy++)
+            if ((x + dx) < LCD_WIDTH && (y + dy) < LCD_HEIGHT)
+                frame_buffer[x + dx][y + dy] = color;
+}
 
-        frame_buffer[x][y] = color;
 
+void frame_buffer_init(void) {
+    for (int i = 0; i < LCD_WIDTH; i++)
+        for (int j = 0; j < LCD_HEIGHT; j++)
+            frame_buffer[i][j] = 0xFFFF;
 }
 
 
 uint16_t LCD_Restore_Area(uint8_t x, uint8_t y) {
+	if (x + 10 > 80 && x < 95 && y + 10 > 10 && y < 30) {
+	            return 0;
+	        }
 
-if( frame_buffer[x][y]){return frame_buffer[x][y]; }
-else {return 0x0000;}
-printf("%d",frame_buffer[x][y]);
+
+    for (int dx = 0; dx < 10; dx++) {
+        for (int dy = 0; dy < 10; dy++) {
+            uint8_t px = x + dx;
+            uint8_t py = y + dy;
+            if (px < LCD_WIDTH && py < LCD_HEIGHT) {
+                uint16_t color = frame_buffer[px][py];
+
+                LCD_CommandMode(0x2A);
+                LCD_DataMode(0x00); LCD_DataMode(px);
+                LCD_DataMode(0x00); LCD_DataMode(px);
+                LCD_CommandMode(0x2B);
+                LCD_DataMode(0x00); LCD_DataMode(py);
+                LCD_DataMode(0x00); LCD_DataMode(py);
+                LCD_CommandMode(0x2C);
+                HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);
+                LcdOpen();
+                uint8_t data[] = {color >> 8, color & 0xFF};
+                HAL_SPI_Transmit(&hspi1, data, 2, HAL_MAX_DELAY);
+                Lcdclose();
+            }
+        }
+    }
+    return 0;
 }
-
-
-
 
 /* USER CODE END 4 */
 
