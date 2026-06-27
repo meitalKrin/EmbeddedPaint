@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paint — PICO-CADE mockup (128×160 ST7735)</title>
+<link rel="stylesheet" href="device.css">
+</head>
+<body>
+<div class="stage">
+  <p class="screen-title">Paint · freehand drawing</p>
+
+  <div class="device">
+    <div class="brand-row">
+      <span class="brand">PICO-CADE <span class="sub">· RP2350</span></span>
+      <span class="power-led"></span>
+    </div>
+    <div class="bezel">
+      <canvas class="screen" id="screen" width="128" height="160"></canvas>
+    </div>
+    <div class="screen-meta">128 × 160 · ST7735 · RGB565</div>
+    <div class="controls">
+      <div class="stick" title="Analog joystick — moves the 10×10 cursor"></div>
+      <div class="btns">
+        <div class="btn accent" title="PC5 — hold to paint">✎</div>
+        <div class="btn" title="PC4 — cycle colour">◑</div>
+        <div class="btn" title="PA10 — clear">⌫</div>
+      </div>
+    </div>
+  </div>
+
+  <p class="legend">
+    A 10×10 cursor draws onto a <b>white canvas</b> held in a full-screen
+    <b>40 KB framebuffer</b>. Hold <b>✎ (PC5)</b> to paint the current colour,
+    <b>◑ (PC4)</b> cycles the 6-colour palette, <b>⌫ (PA10)</b> clears. The live
+    swatch (top-right) shows the active colour.
+  </p>
+  <p class="note">Static design mockup at the real panel resolution; the six paint colours are the exact RGB565 palette constants from the firmware.</p>
+  <p class="backlink"><a href="../PRD.md">← EmbeddedPaint docs</a></p>
+</div>
+
+<script src="device.js"></script>
+<script>
+  var ctx = PICO.ctxOf('screen');
+  var C = PICO.COL;
+
+  // white canvas
+  PICO.fill565(ctx, 0, 0, 128, 160, C.WHITE);
+
+  // helper: a freehand stroke = overlapping 10x10 blocks along a path
+  function stroke(pts, color) {
+    for (var i = 0; i < pts.length; i++) {
+      PICO.fill565(ctx, pts[i][0], pts[i][1], 10, 10, color);
+    }
+  }
+
+  // red squiggle (upper-left)
+  stroke([[10,46],[15,50],[20,55],[25,58],[30,55],[34,50],[38,46]], C.RED);
+  // blue wave (middle)
+  stroke([[14,92],[20,96],[27,98],[34,96],[41,92],[48,94],[55,98]], C.BLUE);
+  // green arc (lower-left to centre)
+  stroke([[20,120],[27,124],[35,126],[43,124],[50,120]], C.GREEN);
+  // magenta short mark (right)
+  stroke([[88,70],[92,75],[95,81],[92,87]], C.MAGENTA);
+  // cyan dots (lower-right)
+  stroke([[78,118],[86,122],[94,126]], C.CYAN);
+
+  // active-colour swatch UI (firmware draws it at x80..95, y10..25)
+  PICO.fill565(ctx, 79, 9, 18, 18, C.BLACK);     // thin frame
+  PICO.fill565(ctx, 80, 10, 16, 16, C.MAGENTA);  // current colour
+
+  // black 10x10 cursor near the green arc
+  PICO.fill565(ctx, 56, 116, 10, 10, C.BLACK);
+</script>
+</body>
+</html>
